@@ -8,8 +8,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @title DEX Template
  * @author
  * @notice Empty DEX.sol that just outlines what features could be part of the challenge (up to you!)
- * @dev We want to create an automatic market where our contract will hold reserves of both ETH and 🎈 Balloons. These reserves will provide liquidity that allows anyone to swap between the assets.
- * NOTE: functions outlined here are what work with the front end of this challenge. Also return variable names need to be specified exactly may be referenced (It may be helpful to cross reference with front-end code function calls).
+ * @dev We want to create an automatic market where our contract will hold reserves of both ETH and 🎈 Balloons.
+ *      These reserves will provide liquidity that allows anyone to swap between the assets.
+ *      NOTE: functions outlined here are what work with the front end of this challenge.
+ *      Also return variable names need to be specified exactly may be referenced (It may be helpful to cross reference with front-end code function calls).
  */
 contract DEX {
     /* ========== GLOBAL VARIABLES ========== */
@@ -57,7 +59,8 @@ contract DEX {
     /* ========== MUTATIVE FUNCTIONS ========== */
 
     /**
-     * @notice Initializes the amount of tokens that will be transferred to the DEX from the ERC20 mintee (and only them based on how Balloons.sol is written). Loads contract up with both ETH and Balloons.
+     * @notice Initializes the amount of tokens that will be transferred to the DEX from the ERC20 mintee (and only them based on how Balloons.sol is written).
+     *         Loads contract up with both ETH and Balloons.
      * @param tokens Amount to be transferred to DEX
      * @return totalLiquidity The number of liquidity provider tokens (LPTs) minted as a result of the deposit
      * NOTE: since the ratio is 1:1, this is fine to initialize the totalLiquidity (w.r.t. Balloons) as equal to the ETH balance of the contract.
@@ -81,9 +84,15 @@ contract DEX {
 
     /**
      * @notice Returns yOutput, or yDelta for xInput (or xDelta)
-     * @dev Follow along with the [original tutorial](https://medium.com/@austin_48503/%EF%B8%8F-minimum-viable-exchange-d84f30bd0c90) for an understanding of the DEX's pricing model.
+     * @dev Follows the constant product formula: (xReserves + xInputWithFee) * (yReserves - yOutput) = xReserves * yReserves,
+     *      where xInputWithFee = xInput * 997 (accounting for a 0.3% fee) and the fee denominator is 1000.
      */
-    function price(uint256 xInput, uint256 xReserves, uint256 yReserves) public pure returns (uint256 yOutput) {}
+    function price(uint256 xInput, uint256 xReserves, uint256 yReserves) public pure returns (uint256 yOutput) {
+        uint256 xInputWithFee = xInput * 997;
+        uint256 numerator = xInputWithFee * yReserves;
+        uint256 denominator = (xReserves * 1000) + xInputWithFee;
+        yOutput = numerator / denominator;
+    }
 
     /**
      * @notice Returns liquidity for a user.
@@ -96,23 +105,31 @@ contract DEX {
     /**
      * @notice Sends Ether to DEX in exchange for $BAL.
      */
-    function ethToToken() public payable returns (uint256 tokenOutput) {}
+    function ethToToken() public payable returns (uint256 tokenOutput) {
+        // Implementation goes here...
+    }
 
     /**
      * @notice Sends $BAL tokens to DEX in exchange for Ether.
      */
-    function tokenToEth(uint256 tokenInput) public returns (uint256 ethOutput) {}
+    function tokenToEth(uint256 tokenInput) public returns (uint256 ethOutput) {
+        // Implementation goes here...
+    }
 
     /**
      * @notice Allows deposits of $BAL and $ETH to liquidity pool.
-     * NOTE: msg.value is used to determine the amount of $BAL needed and taken from the depositor.
-     * NOTE: The user must approve the DEX to spend their tokens beforehand.
+     *         NOTE: msg.value is used to determine the amount of $BAL needed and taken from the depositor.
+     *         NOTE: The user must approve the DEX to spend their tokens beforehand.
      */
-    function deposit() public payable returns (uint256 tokensDeposited) {}
+    function deposit() public payable returns (uint256 tokensDeposited) {
+        // Implementation goes here...
+    }
 
     /**
      * @notice Allows withdrawal of $BAL and $ETH from liquidity pool.
-     * NOTE: With low liquidity, the user may receive very little back.
+     *         NOTE: With low liquidity, the user may receive very little back.
      */
-    function withdraw(uint256 amount) public returns (uint256 ethAmount, uint256 tokenAmount) {}
+    function withdraw(uint256 amount) public returns (uint256 ethAmount, uint256 tokenAmount) {
+        // Implementation goes here...
+    }
 }
