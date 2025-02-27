@@ -6,17 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title DEX Template
- * @author
- * @notice Empty DEX.sol that just outlines what features could be part of the challenge (up to you!)
- * @dev We want to create an automatic market where our contract will hold reserves of both ETH and 🎈 Balloons.
- *      These reserves will provide liquidity that allows anyone to swap between the assets.
- *      NOTE: functions outlined here are what work with the front end of this challenge.
- *      Also return variable names need to be specified exactly may be referenced (It may be helpful to cross reference with front-end code function calls).
+ * @notice A decentralized exchange that holds reserves of ETH and tokens.
+ *         It supports swaps between ETH and $BAL tokens using a constant product pricing model.
  */
 contract DEX {
     /* ========== GLOBAL VARIABLES ========== */
 
-    IERC20 token; // instantiates the imported contract
+    IERC20 token; // Instantiates the imported token contract
 
     // Total liquidity in the DEX
     uint256 public totalLiquidity;
@@ -26,22 +22,22 @@ contract DEX {
     /* ========== EVENTS ========== */
 
     /**
-     * @notice Emitted when ethToToken() swap transacted
+     * @notice Emitted when an ETH to Token swap is executed.
      */
     event EthToTokenSwap(address swapper, uint256 tokenOutput, uint256 ethInput);
 
     /**
-     * @notice Emitted when tokenToEth() swap transacted
+     * @notice Emitted when a Token to ETH swap is executed.
      */
     event TokenToEthSwap(address swapper, uint256 tokensInput, uint256 ethOutput);
 
     /**
-     * @notice Emitted when liquidity provided to DEX and mints LPTs.
+     * @notice Emitted when liquidity is provided to the DEX.
      */
     event LiquidityProvided(address liquidityProvider, uint256 liquidityMinted, uint256 ethInput, uint256 tokensInput);
 
     /**
-     * @notice Emitted when liquidity removed from DEX and decreases LPT count within DEX.
+     * @notice Emitted when liquidity is removed from the DEX.
      */
     event LiquidityRemoved(
         address liquidityRemover,
@@ -53,39 +49,33 @@ contract DEX {
     /* ========== CONSTRUCTOR ========== */
 
     constructor(address tokenAddr) {
-        token = IERC20(tokenAddr); // specifies the token address that will hook into the interface and be used through the variable 'token'
+        token = IERC20(tokenAddr);
     }
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
     /**
-     * @notice Initializes the amount of tokens that will be transferred to the DEX from the ERC20 mintee (and only them based on how Balloons.sol is written).
-     *         Loads contract up with both ETH and Balloons.
-     * @param tokens Amount to be transferred to DEX
-     * @return totalLiquidity The number of liquidity provider tokens (LPTs) minted as a result of the deposit
-     * NOTE: since the ratio is 1:1, this is fine to initialize the totalLiquidity (w.r.t. Balloons) as equal to the ETH balance of the contract.
+     * @notice Initializes the DEX with both ETH and tokens.
+     * @param tokens Amount of tokens to be transferred to the DEX
+     * @return totalLiquidity The liquidity provider tokens minted
      */
     function init(uint256 tokens) public payable returns (uint256) {
-        // Ensure the DEX is only initialized once
         require(totalLiquidity == 0, "DEX already initialized");
 
-        // Set total liquidity equal to the ETH deposited (assumes 1:1 ratio)
         totalLiquidity = address(this).balance;
-
-        // Record the liquidity provided by the sender
         liquidity[msg.sender] = totalLiquidity;
 
-        // Transfer tokens from the sender to the DEX contract
-        // The sender must have approved the DEX to spend their tokens beforehand
         require(token.transferFrom(msg.sender, address(this), tokens), "Token transfer failed");
-
         return totalLiquidity;
     }
 
     /**
-     * @notice Returns yOutput, or yDelta for xInput (or xDelta)
-     * @dev Follows the constant product formula: (xReserves + xInputWithFee) * (yReserves - yOutput) = xReserves * yReserves,
-     *      where xInputWithFee = xInput * 997 (accounting for a 0.3% fee) and the fee denominator is 1000.
+     * @notice Calculates the output amount for a given input using the constant product formula.
+     * @dev Uses a 0.3% fee by applying a multiplier of 997/1000 to the input amount.
+     * @param xInput Amount of input asset (ETH or tokens)
+     * @param xReserves Reserve of input asset before the swap
+     * @param yReserves Reserve of output asset
+     * @return yOutput Calculated output amount
      */
     function price(uint256 xInput, uint256 xReserves, uint256 yReserves) public pure returns (uint256 yOutput) {
         uint256 xInputWithFee = xInput * 997;
@@ -95,39 +85,70 @@ contract DEX {
     }
 
     /**
-     * @notice Returns liquidity for a user.
-     * NOTE: This is not needed typically due to the `liquidity()` mapping variable being public and having a getter as a result.
+     * @notice Returns the liquidity for a given address.
+     * @param lp The liquidity provider's address.
+     * @return The amount of liquidity provided.
      */
     function getLiquidity(address lp) public view returns (uint256) {
         return liquidity[lp];
     }
 
     /**
-     * @notice Sends Ether to DEX in exchange for $BAL.
+     * @notice Swaps ETH for $BAL tokens.
+     * @dev The function calculates the token output using the price function.
+     *      Note that the ETH reserve is taken as the contract balance minus msg.value.
+     * @return tokenOutput The amount of tokens the user receives.
      */
     function ethToToken() public payable returns (uint256 tokenOutput) {
-        // Implementation goes here...
+        require(msg.value > 0, "Must send ETH");
+        // Get the ETH reserve before the current ETH is added
+        uint256 ethReserve = address(this).balance - msg.value;
+        uint256 tokenReserve = token.balanceOf(address(this));
+
+        // Calculate how many tokens to output using our pricing function
+        tokenOutput = price(msg.value, ethReserve, tokenReserve);
+        require(tokenOutput <= tokenReserve, "DEX has insufficient tokens");
+
+        // Transfer tokens to the swapper
+        require(token.transfer(msg.sender, tokenOutput), "Token transfer failed");
+        emit EthToTokenSwap(msg.sender, tokenOutput, msg.value);
     }
 
     /**
-     * @notice Sends $BAL tokens to DEX in exchange for Ether.
+     * @notice Swaps $BAL tokens for ETH.
+     * @dev The function calculates the ETH output using the price function.
+     *      It first stores the token reserve (before receiving the tokens) to ensure correct pricing.
+     * @param tokenInput The amount of tokens the user wishes to swap.
+     * @return ethOutput The amount of ETH the user receives.
      */
     function tokenToEth(uint256 tokenInput) public returns (uint256 ethOutput) {
-        // Implementation goes here...
+        require(tokenInput > 0, "Must swap a positive token amount");
+        // Get the token reserve before transferring tokens
+        uint256 tokenReserve = token.balanceOf(address(this));
+        // Calculate ETH output using our pricing function; ETH reserve is the contract's current balance.
+        ethOutput = price(tokenInput, tokenReserve, address(this).balance);
+        require(ethOutput <= address(this).balance, "DEX has insufficient ETH");
+
+        // Transfer tokens from the user to the DEX
+        require(token.transferFrom(msg.sender, address(this), tokenInput), "Token transfer failed");
+        // Transfer ETH to the user
+        payable(msg.sender).transfer(ethOutput);
+        emit TokenToEthSwap(msg.sender, tokenInput, ethOutput);
     }
 
     /**
-     * @notice Allows deposits of $BAL and $ETH to liquidity pool.
-     *         NOTE: msg.value is used to determine the amount of $BAL needed and taken from the depositor.
-     *         NOTE: The user must approve the DEX to spend their tokens beforehand.
+     * @notice Allows deposits of ETH and tokens into the liquidity pool.
+     * @return tokensDeposited The amount of tokens deposited.
      */
     function deposit() public payable returns (uint256 tokensDeposited) {
         // Implementation goes here...
     }
 
     /**
-     * @notice Allows withdrawal of $BAL and $ETH from liquidity pool.
-     *         NOTE: With low liquidity, the user may receive very little back.
+     * @notice Allows withdrawals of ETH and tokens from the liquidity pool.
+     * @param amount The amount of liquidity tokens to redeem.
+     * @return ethAmount The amount of ETH withdrawn.
+     * @return tokenAmount The amount of tokens withdrawn.
      */
     function withdraw(uint256 amount) public returns (uint256 ethAmount, uint256 tokenAmount) {
         // Implementation goes here...
