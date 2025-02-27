@@ -14,31 +14,16 @@ contract DEX {
 
     IERC20 token; // Instantiates the imported token contract
 
-    // Total liquidity in the DEX
+    // Total liquidity in the DEX (represents the total Liquidity Provider Tokens minted)
     uint256 public totalLiquidity;
     // Tracks liquidity provided by each user
     mapping(address => uint256) public liquidity;
 
     /* ========== EVENTS ========== */
 
-    /**
-     * @notice Emitted when an ETH to Token swap is executed.
-     */
     event EthToTokenSwap(address swapper, uint256 tokenOutput, uint256 ethInput);
-
-    /**
-     * @notice Emitted when a Token to ETH swap is executed.
-     */
     event TokenToEthSwap(address swapper, uint256 tokensInput, uint256 ethOutput);
-
-    /**
-     * @notice Emitted when liquidity is provided to the DEX.
-     */
     event LiquidityProvided(address liquidityProvider, uint256 liquidityMinted, uint256 ethInput, uint256 tokensInput);
-
-    /**
-     * @notice Emitted when liquidity is removed from the DEX.
-     */
     event LiquidityRemoved(
         address liquidityRemover,
         uint256 liquidityWithdrawn,
@@ -101,15 +86,12 @@ contract DEX {
      */
     function ethToToken() public payable returns (uint256 tokenOutput) {
         require(msg.value > 0, "Must send ETH");
-        // Get the ETH reserve before the current ETH is added
         uint256 ethReserve = address(this).balance - msg.value;
         uint256 tokenReserve = token.balanceOf(address(this));
 
-        // Calculate how many tokens to output using our pricing function
         tokenOutput = price(msg.value, ethReserve, tokenReserve);
         require(tokenOutput <= tokenReserve, "DEX has insufficient tokens");
 
-        // Transfer tokens to the swapper
         require(token.transfer(msg.sender, tokenOutput), "Token transfer failed");
         emit EthToTokenSwap(msg.sender, tokenOutput, msg.value);
     }
@@ -117,40 +99,69 @@ contract DEX {
     /**
      * @notice Swaps $BAL tokens for ETH.
      * @dev The function calculates the ETH output using the price function.
-     *      It first stores the token reserve (before receiving the tokens) to ensure correct pricing.
      * @param tokenInput The amount of tokens the user wishes to swap.
      * @return ethOutput The amount of ETH the user receives.
      */
     function tokenToEth(uint256 tokenInput) public returns (uint256 ethOutput) {
         require(tokenInput > 0, "Must swap a positive token amount");
-        // Get the token reserve before transferring tokens
         uint256 tokenReserve = token.balanceOf(address(this));
-        // Calculate ETH output using our pricing function; ETH reserve is the contract's current balance.
         ethOutput = price(tokenInput, tokenReserve, address(this).balance);
         require(ethOutput <= address(this).balance, "DEX has insufficient ETH");
 
-        // Transfer tokens from the user to the DEX
         require(token.transferFrom(msg.sender, address(this), tokenInput), "Token transfer failed");
-        // Transfer ETH to the user
         payable(msg.sender).transfer(ethOutput);
         emit TokenToEthSwap(msg.sender, tokenInput, ethOutput);
     }
 
     /**
-     * @notice Allows deposits of ETH and tokens into the liquidity pool.
-     * @return tokensDeposited The amount of tokens deposited.
+     * @notice Allows deposits of ETH and $BAL tokens into the liquidity pool.
+     * @dev The depositor must send ETH with the transaction and approve the DEX for the corresponding token amount.
+     *      The correct token amount is calculated to maintain the current reserve ratio.
+     * @return liquidityMinted The amount of liquidity tokens minted for the depositor.
      */
-    function deposit() public payable returns (uint256 tokensDeposited) {
-        // Implementation goes here...
+    function deposit() public payable returns (uint256 liquidityMinted) {
+        require(totalLiquidity > 0, "DEX not initialized");
+        require(msg.value > 0, "Must send ETH to deposit");
+
+        // Calculate ETH reserve prior to deposit
+        uint256 ethReserve = address(this).balance - msg.value;
+        uint256 tokenReserve = token.balanceOf(address(this));
+
+        // Determine required token amount to maintain ratio
+        uint256 tokenAmount = (msg.value * tokenReserve) / ethReserve;
+        require(token.transferFrom(msg.sender, address(this), tokenAmount), "Token transfer failed");
+
+        // Calculate liquidity minted based on the ETH deposited
+        liquidityMinted = (msg.value * totalLiquidity) / ethReserve;
+        liquidity[msg.sender] += liquidityMinted;
+        totalLiquidity += liquidityMinted;
+
+        emit LiquidityProvided(msg.sender, liquidityMinted, msg.value, tokenAmount);
     }
 
     /**
-     * @notice Allows withdrawals of ETH and tokens from the liquidity pool.
-     * @param amount The amount of liquidity tokens to redeem.
-     * @return ethAmount The amount of ETH withdrawn.
-     * @return tokenAmount The amount of tokens withdrawn.
+     * @notice Allows withdrawal of liquidity from the pool.
+     * @dev The function calculates the amount of ETH and tokens to withdraw based on the liquidity tokens burned.
+     * @param amount The amount of liquidity tokens the user wishes to withdraw.
+     * @return ethAmount The amount of ETH returned.
+     * @return tokenAmount The amount of tokens returned.
      */
     function withdraw(uint256 amount) public returns (uint256 ethAmount, uint256 tokenAmount) {
-        // Implementation goes here...
+        require(amount > 0, "Withdraw amount must be > 0");
+        require(liquidity[msg.sender] >= amount, "Not enough liquidity");
+
+        uint256 ethReserve = address(this).balance;
+        uint256 tokenReserve = token.balanceOf(address(this));
+
+        // Calculate amounts to withdraw based on the user's share of total liquidity
+        ethAmount = (amount * ethReserve) / totalLiquidity;
+        tokenAmount = (amount * tokenReserve) / totalLiquidity;
+
+        liquidity[msg.sender] -= amount;
+        totalLiquidity -= amount;
+
+        require(token.transfer(msg.sender, tokenAmount), "Token transfer failed");
+        payable(msg.sender).transfer(ethAmount);
+        emit LiquidityRemoved(msg.sender, amount, tokenAmount, ethAmount);
     }
 }
